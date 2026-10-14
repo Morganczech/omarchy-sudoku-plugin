@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Sudoku Challenge
+GenericName=Sudoku
+Comment=Classic sudoku and a survival challenge
+Exec=gruut-sudoku
+TryExec=gruut-sudoku
+Icon=applications-games
+Terminal=false
+Categories=Game;
+Keywords=sudoku;puzzle;challenge;
+StartupNotify=false

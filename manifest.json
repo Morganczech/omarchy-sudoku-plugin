@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "gruut.sudoku",
+  "name": "Sudoku Challenge",
+  "version": "1.1.0",
+  "author": "Morganczech",
+  "license": "MIT",
+  "description": "Classic Sudoku and progressive Survival Challenge with full keyboard & mouse controls.",
+  "homepage": "https://github.com/Morganczech/omarchy-sudoku-plugin",
+  "kinds": [
+    "overlay",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Sudoku.qml",
+    "barWidget": "LauncherButton.qml"
+  },
+  "barWidget": {
+    "displayName": "Sudoku Challenge",
+    "description": "Classic Sudoku and a progressive Survival Challenge",
+    "category": "Games",
+    "allowMultiple": false,
+    "defaultSection": "left"
+  }
+}
