@@ -6,6 +6,9 @@ function emptyStats() {
     classicWins: 0,
     classicBestMs: {},
     challengeBestRound: 0,
+    challengeBestTimeMs: 0,
+    challengeBestMistakes: 0,
+    challengeTotalMistakes: 0,
     challengeRuns: 0
   }
 }
@@ -48,6 +51,7 @@ function serialize(state) {
     notesMode: state.notesMode === true,
     paused: false,
     elapsedMs: state.elapsedMs || 0,
+    clearedElapsedMs: state.clearedElapsedMs || 0,
     board: copyBoard(state.board),
     given: copyGiven(state.given),
     solution: copyBoard(state.solution),
@@ -80,6 +84,7 @@ function parse(raw) {
     notesMode: data.notesMode === true,
     paused: false,
     elapsedMs: data.elapsedMs || 0,
+    clearedElapsedMs: data.clearedElapsedMs || 0,
     board: copyBoard(data.board),
     given: copyGiven(data.given),
     solution: copyBoard(data.solution),
@@ -102,6 +107,9 @@ function parseStats(raw) {
     stats.classicWins = data.classicWins || 0
     stats.classicBestMs = data.classicBestMs || {}
     stats.challengeBestRound = data.challengeBestRound || 0
+    stats.challengeBestTimeMs = data.challengeBestTimeMs || 0
+    stats.challengeBestMistakes = data.challengeBestMistakes || 0
+    stats.challengeTotalMistakes = data.challengeTotalMistakes || 0
     stats.challengeRuns = data.challengeRuns || 0
   } catch (e) {
     return emptyStats()
@@ -117,10 +125,23 @@ function recordClassicWin(stats, difficulty, elapsedMs) {
   return next
 }
 
-function recordChallengeEnd(stats, completedRounds) {
+function recordChallengeRound(stats, completedRounds, clearedElapsedMs, mistakes) {
   var next = parseStats(JSON.stringify(stats || emptyStats()))
+  var rounds = completedRounds || 0
+  var timeMs = clearedElapsedMs || 0
+  var errs = mistakes || 0
+  if (rounds > next.challengeBestRound || (rounds === next.challengeBestRound && rounds > 0 && (next.challengeBestTimeMs === 0 || timeMs < next.challengeBestTimeMs))) {
+    next.challengeBestRound = rounds
+    next.challengeBestTimeMs = timeMs
+    next.challengeBestMistakes = errs
+  }
+  return next
+}
+
+function recordChallengeEnd(stats, completedRounds, clearedElapsedMs, mistakes) {
+  var next = recordChallengeRound(stats, completedRounds, clearedElapsedMs, mistakes)
   next.challengeRuns += 1
-  if (completedRounds > next.challengeBestRound) next.challengeBestRound = completedRounds
+  next.challengeTotalMistakes = (next.challengeTotalMistakes || 0) + (mistakes || 0)
   return next
 }
 
@@ -131,6 +152,7 @@ if (typeof module !== "undefined") {
     parse: parse,
     parseStats: parseStats,
     recordClassicWin: recordClassicWin,
+    recordChallengeRound: recordChallengeRound,
     recordChallengeEnd: recordChallengeEnd
   }
 }

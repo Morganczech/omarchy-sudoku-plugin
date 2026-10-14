@@ -18,6 +18,7 @@ function blank() {
     notesMode: false,
     paused: false,
     elapsedMs: 0,
+    clearedElapsedMs: 0,
     board: zeros(81),
     given: [],
     solution: zeros(81),
@@ -43,6 +44,7 @@ function cloneShallow(state) {
     notesMode: state.notesMode,
     paused: state.paused,
     elapsedMs: state.elapsedMs,
+    clearedElapsedMs: state.clearedElapsedMs || 0,
     board: state.board.slice(),
     given: state.given.slice(),
     solution: state.solution.slice(),
@@ -105,11 +107,12 @@ function begin(puzzle, options) {
     difficulty: settings.difficulty || "easy",
     round: settings.round || 1,
     lives: settings.mode === "challenge" ? settings.lives : -1,
-    mistakes: 0,
+    mistakes: settings.mistakes || 0,
     hintsLeft: settings.hints == null ? 3 : settings.hints,
     notesMode: false,
     paused: false,
     elapsedMs: settings.elapsedMs || 0,
+    clearedElapsedMs: settings.clearedElapsedMs || 0,
     board: board,
     given: givenFrom(board),
     solution: puzzle.solution.slice(),
@@ -219,6 +222,7 @@ function finishIfNeeded(state) {
       state.status = "round"
       state.screen = "round"
       state.score = state.round || 1
+      state.clearedElapsedMs = state.elapsedMs || 0
       state.message = "Round clear"
     } else {
       state.status = "won"

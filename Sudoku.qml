@@ -93,10 +93,24 @@ Item {
     root.cells = Game.cells(next)
     root.digitCounts = Game.digitCounts(next)
     if (prev && prev.mode && prev.status !== "lost" && next.status === "lost") {
-      root.stats = Storage.recordChallengeEnd(root.stats, next.score || 0)
+      root.stats = Storage.recordChallengeEnd(
+        root.stats,
+        next.score || 0,
+        next.clearedElapsedMs || 0,
+        next.mistakes || 0
+      )
       root.flushStats()
       root.clearSave()
       return
+    }
+    if (prev && prev.mode && prev.status !== "round" && next.status === "round" && next.mode === "challenge") {
+      root.stats = Storage.recordChallengeRound(
+        root.stats,
+        next.score || 0,
+        next.clearedElapsedMs || next.elapsedMs || 0,
+        next.mistakes || 0
+      )
+      root.flushStats()
     }
     if (prev && prev.mode && prev.status !== "won" && next.status === "won" && next.mode === "classic") {
       root.stats = Storage.recordClassicWin(root.stats, next.difficulty, next.elapsedMs)
@@ -205,8 +219,10 @@ Item {
       difficulty: Challenge.nextDifficulty(state.difficulty),
       round: (state.round || 1) + 1,
       lives: Challenge.livesAfterClear(state.lives, root.config),
+      mistakes: state.mistakes || 0,
       hints: root.config.hintsPerPuzzle,
       elapsedMs: state.elapsedMs || 0,
+      clearedElapsedMs: state.clearedElapsedMs || state.elapsedMs || 0,
       score: state.score || state.round || 1
     })
   }
@@ -752,7 +768,9 @@ Item {
               StatRecordRow { label: "Best Time · Easy"; value: root.bestTime("easy") }
               StatRecordRow { label: "Best Time · Medium"; value: root.bestTime("medium") }
               StatRecordRow { label: "Best Time · Hard"; value: root.bestTime("hard") }
-              StatRecordRow { label: "Survival Best Round"; value: String(root.stats.challengeBestRound || 0); accentValue: true }
+              StatRecordRow { label: "Survival Best Streak"; value: String(root.stats.challengeBestRound || 0) + " rounds"; accentValue: true }
+              StatRecordRow { label: "Survival Best Time"; value: root.stats.challengeBestTimeMs ? Game.formatTime(root.stats.challengeBestTimeMs) : "—" }
+              StatRecordRow { label: "Survival Mistakes (Best / All)"; value: String(root.stats.challengeBestMistakes || 0) + " / " + String(root.stats.challengeTotalMistakes || 0) }
               StatRecordRow { label: "Survival Runs Played"; value: String(root.stats.challengeRuns || 0) }
             }
 
@@ -806,12 +824,18 @@ Item {
                   wrapMode: Text.WordWrap
                   visible: root.state.screen !== "dealing"
                   text: root.state.screen === "lost"
-                        ? ("Rounds cleared: " + (root.state.score || 0) + "\nTotal time: " + Game.formatTime(root.state.elapsedMs))
+                        ? ("Rounds cleared: " + (root.state.score || 0)
+                           + "\nCleared survival time: " + Game.formatTime(root.state.clearedElapsedMs || 0)
+                           + "\nTotal time: " + Game.formatTime(root.state.elapsedMs)
+                           + "  ·  Mistakes (lives lost): " + (root.state.mistakes || 0))
                         : root.state.screen === "won"
                         ? ("Difficulty: " + root.levelName(root.state.difficulty) + "\nTime: " + Game.formatTime(root.state.elapsedMs) + "  ·  Mistakes: " + (root.state.mistakes || 0))
                         : root.state.screen === "round"
-                        ? ("Next difficulty: " + root.levelName(Challenge.nextDifficulty(root.state.difficulty))
-                           + "\nLives: " + (root.state.lives || 0) + " + " + root.config.bonusLives + " bonus")
+                        ? ("Rounds cleared: " + (root.state.score || root.state.round || 1)
+                           + "  ·  Survival time: " + Game.formatTime(root.state.clearedElapsedMs || root.state.elapsedMs)
+                           + "\nMistakes so far: " + (root.state.mistakes || 0)
+                           + "  ·  Lives: " + (root.state.lives || 0) + " + " + root.config.bonusLives + " bonus"
+                           + "\nNext difficulty: " + root.levelName(Challenge.nextDifficulty(root.state.difficulty)))
                         : ""
                   color: root.foreground
                   opacity: 0.85

@@ -91,17 +91,31 @@ test("notes, hints, and a finished classic puzzle", function () {
   assert.equal(state.screen, "won")
 })
 
-test("death clears the save and records the cleared rounds", function () {
+test("death clears the save and records the cleared rounds, survival time, and mistakes", function () {
   const puzzle = Sudoku.generate("easy", 9)
-  let state = Game.begin(puzzle, { mode: "challenge", difficulty: "hard", lives: 1, hints: 0, round: 4 })
+  let state = Game.begin(puzzle, {
+    mode: "challenge",
+    difficulty: "hard",
+    lives: 1,
+    mistakes: 4,
+    hints: 0,
+    round: 4,
+    elapsedMs: 210000,
+    clearedElapsedMs: 185000
+  })
   const hole = state.selected
   const wrong = state.solution[hole] === 9 ? 8 : 9
   state = Game.place(state, wrong)
   assert.equal(state.status, "lost")
   assert.equal(state.score, 3)
+  assert.equal(state.mistakes, 5)
+  assert.equal(state.clearedElapsedMs, 185000)
   assert.equal(Storage.serialize(state), null)
-  const stats = Storage.recordChallengeEnd(Storage.emptyStats(), state.score)
+  const stats = Storage.recordChallengeEnd(Storage.emptyStats(), state.score, state.clearedElapsedMs, state.mistakes)
   assert.equal(stats.challengeBestRound, 3)
+  assert.equal(stats.challengeBestTimeMs, 185000)
+  assert.equal(stats.challengeBestMistakes, 5)
+  assert.equal(stats.challengeTotalMistakes, 5)
   assert.equal(stats.challengeRuns, 1)
 })
 
