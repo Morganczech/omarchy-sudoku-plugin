@@ -17,10 +17,12 @@ Item {
   property var manifest: null
 
   property bool opened: false
+  property bool dirReady: false
   property bool storageReady: false
   property bool saveHydrated: false
   property bool statsHydrated: false
   property bool hasSave: false
+  property bool dealing: false
   property var saved: null
   property var stats: Storage.emptyStats()
   property var state: Game.blank()
@@ -73,22 +75,38 @@ Item {
   }
 
   function hydrateSave(raw) {
-    if (root.saveHydrated) return
+    var parsed = Storage.parse(raw)
+    if (parsed !== null) {
+      root.saved = parsed
+      root.hasSave = true
+      if (!root.state || !root.state.mode) {
+        var resumed = Game.resume(parsed)
+        root.state = resumed
+        root.cells = Game.cells(resumed)
+        root.digitCounts = Game.digitCounts(resumed)
+      }
+    } else if (!root.saveHydrated) {
+      root.saved = null
+      root.hasSave = false
+    }
     root.saveHydrated = true
-    root.saved = Storage.parse(raw)
-    root.hasSave = root.saved !== null
     root.maybeReady()
   }
 
   function hydrateStats(raw) {
-    if (root.statsHydrated) return
+    var parsed = Storage.parseStats(raw)
+    if (raw && String(raw).trim()) {
+      root.stats = parsed
+    } else if (!root.statsHydrated) {
+      root.stats = parsed
+    }
     root.statsHydrated = true
-    root.stats = Storage.parseStats(raw)
     root.maybeReady()
   }
 
-  function commit(next) {
+  function commit(next, options) {
     var prev = root.state
+    var opts = options || {}
     root.state = next
     root.cells = Game.cells(next)
     root.digitCounts = Game.digitCounts(next)
@@ -116,7 +134,9 @@ Item {
       root.stats = Storage.recordClassicWin(root.stats, next.difficulty, next.elapsedMs)
       root.flushStats()
     }
-    if (root.storageReady) root.scheduleSave()
+    if (!root.storageReady) return
+    if (opts.debounce) root.scheduleSave()
+    else root.flushSave()
   }
 
   function scheduleSave() {
@@ -173,16 +193,14 @@ Item {
     root.lockedDigit = 0
     root.activeDigit = 0
     root.deal = options
-    var next = Game.toMenu(root.state)
-    next.screen = "dealing"
-    next.message = "Dealing..."
-    root.state = next
+    root.dealing = true
     dealTimer.restart()
   }
 
   function dealNow() {
     var request = root.deal
     root.deal = null
+    root.dealing = false
     if (!request) return
     var puzzle = Sudoku.generate(request.difficulty, Date.now())
     root.commit(Game.begin(puzzle, request))
@@ -230,6 +248,7 @@ Item {
   function showMenu() {
     root.menuCursor = 0
     root.lockedDigit = 0
+    root.dealing = false
     if (!root.state || !root.state.mode) {
       root.state = Game.blank()
       root.cells = []
@@ -280,6 +299,15 @@ Item {
     return ms ? Game.formatTime(ms) : "—"
   }
 
+  function continueSubtitle() {
+    var target = (root.state && root.state.mode && root.state.status !== "lost") ? root.state : root.saved
+    if (!target || !target.mode) return "Resume saved puzzle"
+    if (target.mode === "challenge") {
+      return "Survival · Round " + (target.round || 1) + " · " + root.levelName(target.difficulty)
+    }
+    return "Classic · " + root.levelName(target.difficulty)
+  }
+
   function activateMenu() {
     var labels = menuModel()
     var item = labels[root.menuCursor]
@@ -302,7 +330,7 @@ Item {
 
   function menuModel() {
     var items = []
-    if (root.canContinue()) items.push({ id: "continue", label: "Continue", sub: "Resume saved puzzle" })
+    if (root.canContinue()) items.push({ id: "continue", label: "Continue", sub: root.continueSubtitle() })
     items.push({ id: "classic", label: "Classic", sub: "Easy · Medium · Hard" })
     items.push({ id: "challenge", label: "Survival Challenge", sub: "3 lives · progressive difficulty" })
     items.push({ id: "stats", label: "Statistics", sub: "Best times & survival records" })
@@ -311,7 +339,7 @@ Item {
   }
 
   function handleKey(event) {
-    var screen = root.state ? root.state.screen : "menu"
+    var screen = root.dealing ? "dealing" : (root.state ? root.state.screen : "menu")
     var text = event.text || ""
     var lower = text.toLowerCase()
     var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
@@ -382,10 +410,10 @@ Item {
       else root.showMenu()
     }
     else if (lower === "q") root.dismiss()
-    else if (event.key === Qt.Key_Left || lower === "h") root.commit(Game.move(root.state, 0, -1))
-    else if (event.key === Qt.Key_Right || lower === "l") root.commit(Game.move(root.state, 0, 1))
-    else if (event.key === Qt.Key_Up || lower === "k") root.commit(Game.move(root.state, -1, 0))
-    else if (event.key === Qt.Key_Down || lower === "j") root.commit(Game.move(root.state, 1, 0))
+    else if (event.key === Qt.Key_Left || lower === "h") root.commit(Game.move(root.state, 0, -1), { debounce: true })
+    else if (event.key === Qt.Key_Right || lower === "l") root.commit(Game.move(root.state, 0, 1), { debounce: true })
+    else if (event.key === Qt.Key_Up || lower === "k") root.commit(Game.move(root.state, -1, 0), { debounce: true })
+    else if (event.key === Qt.Key_Down || lower === "j") root.commit(Game.move(root.state, 1, 0), { debounce: true })
     else if (lower === "n") root.commit(Game.toggleNotes(root.state))
     else if (lower === "u" && !ctrl) root.commit(Game.undo(root.state))
     else if ((ctrl && (event.key === Qt.Key_R || event.key === Qt.Key_Y)) || lower === "r") root.commit(Game.redo(root.state))
@@ -406,28 +434,27 @@ Item {
     command: ["mkdir", "-p", root.dataDir]
     running: false
     onExited: {
-      saveFile.reload()
-      statsFile.reload()
+      root.dirReady = true
     }
   }
 
   FileView {
     id: saveFile
-    path: root.dataDir + "/save.json"
+    path: root.dirReady ? root.dataDir + "/save.json" : ""
     watchChanges: false
     atomicWrites: true
     printErrors: false
-    onLoaded: root.hydrateSave(text())
+    onLoaded: root.hydrateSave(saveFile.text())
     onLoadFailed: root.hydrateSave("")
   }
 
   FileView {
     id: statsFile
-    path: root.dataDir + "/stats.json"
+    path: root.dirReady ? root.dataDir + "/stats.json" : ""
     watchChanges: false
     atomicWrites: true
     printErrors: false
-    onLoaded: root.hydrateStats(text())
+    onLoaded: root.hydrateStats(statsFile.text())
     onLoadFailed: root.hydrateStats("")
   }
 
@@ -448,11 +475,15 @@ Item {
   Timer {
     interval: 1000
     repeat: true
-    running: root.opened && root.state.status === "playing" && !root.state.paused && root.state.screen === "play"
-    onTriggered: root.commit(Game.tick(root.state, 1000))
+    running: root.opened && !root.dealing && root.state.status === "playing" && !root.state.paused && root.state.screen === "play"
+    onTriggered: root.commit(Game.tick(root.state, 1000), { debounce: true })
   }
 
   Component.onCompleted: mkdirProc.running = true
+  Component.onDestruction: {
+    root.flushSave()
+    root.flushStats()
+  }
 
   PanelWindow {
     id: panel
@@ -527,7 +558,7 @@ Item {
             }
 
             Rectangle {
-              visible: root.storageReady && root.state.screen === "play"
+              visible: root.storageReady && !root.dealing && root.state.screen === "play"
               anchors.verticalCenter: parent.verticalCenter
               height: Style.space(22)
               width: modeBadgeText.implicitWidth + Style.space(16)
@@ -549,7 +580,7 @@ Item {
             }
 
             Rectangle {
-              visible: root.storageReady && root.state.screen === "play" && root.lockedDigit > 0
+              visible: root.storageReady && !root.dealing && root.state.screen === "play" && root.lockedDigit > 0
               anchors.verticalCenter: parent.verticalCenter
               height: Style.space(22)
               width: lockBadgeText.implicitWidth + Style.space(14)
@@ -585,7 +616,7 @@ Item {
             spacing: Style.spacing.xs
 
             HeaderActionButton {
-              visible: root.storageReady && root.state.screen === "play"
+              visible: root.storageReady && !root.dealing && root.state.screen === "play"
               label: root.state.paused ? "▶ Resume" : "⏸ Pause"
               shortcutHint: "P"
               activeState: root.state.paused
@@ -596,7 +627,7 @@ Item {
             }
 
             HeaderActionButton {
-              visible: root.storageReady && root.state.screen !== "menu" && root.state.screen !== "dealing"
+              visible: root.storageReady && !root.dealing && root.state.screen !== "menu"
               label: "☰ Menu"
               shortcutHint: "Esc"
               onClicked: root.showMenu()
@@ -636,7 +667,7 @@ Item {
             anchors.centerIn: parent
             width: Math.min(parent.width, Style.space(320))
             spacing: Style.spacing.sm
-            visible: root.storageReady && root.state.screen === "menu"
+            visible: root.storageReady && !root.dealing && root.state.screen === "menu"
 
             Text {
               width: parent.width
@@ -685,7 +716,7 @@ Item {
             anchors.centerIn: parent
             width: Math.min(parent.width, Style.space(320))
             spacing: Style.spacing.sm
-            visible: root.storageReady && root.state.screen === "difficulty"
+            visible: root.storageReady && !root.dealing && root.state.screen === "difficulty"
 
             Text {
               width: parent.width
@@ -748,7 +779,7 @@ Item {
             anchors.centerIn: parent
             width: Math.min(parent.width, Style.space(360))
             spacing: Style.spacing.md
-            visible: root.storageReady && root.state.screen === "stats"
+            visible: root.storageReady && !root.dealing && root.state.screen === "stats"
 
             Text {
               width: parent.width
@@ -787,7 +818,7 @@ Item {
             anchors.centerIn: parent
             spacing: Style.spacing.md
             width: Math.min(parent.width, Style.space(340))
-            visible: root.storageReady && (root.state.screen === "round" || root.state.screen === "won" || root.state.screen === "lost" || root.state.screen === "dealing")
+            visible: root.storageReady && (root.dealing || root.state.screen === "round" || root.state.screen === "won" || root.state.screen === "lost")
 
             Rectangle {
               width: parent.width
@@ -806,12 +837,12 @@ Item {
                 Text {
                   width: parent.width
                   horizontalAlignment: Text.AlignHCenter
-                  text: root.state.screen === "dealing" ? "Generating Puzzle..."
+                  text: root.dealing ? "Generating Puzzle..."
                       : root.state.screen === "lost" ? "GAME OVER"
                       : root.state.screen === "won" ? "PUZZLE COMPLETE"
                       : "ROUND CLEAR"
-                  color: root.state.screen === "lost" ? Color.urgent
-                       : root.state.screen === "dealing" ? root.foreground
+                  color: root.dealing ? root.foreground
+                       : root.state.screen === "lost" ? Color.urgent
                        : Color.accent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.heading
@@ -822,7 +853,7 @@ Item {
                   width: parent.width
                   horizontalAlignment: Text.AlignHCenter
                   wrapMode: Text.WordWrap
-                  visible: root.state.screen !== "dealing"
+                  visible: !root.dealing
                   text: root.state.screen === "lost"
                         ? ("Rounds cleared: " + (root.state.score || 0)
                            + "\nCleared survival time: " + Game.formatTime(root.state.clearedElapsedMs || 0)
@@ -846,7 +877,7 @@ Item {
             }
 
             MenuRow {
-              visible: root.state.screen === "round"
+              visible: !root.dealing && root.state.screen === "round"
               width: parent.width
               label: "Next Round →"
               sublabel: "Press Enter or click to continue"
@@ -855,7 +886,7 @@ Item {
             }
 
             MenuRow {
-              visible: root.state.screen === "won" || root.state.screen === "lost"
+              visible: !root.dealing && (root.state.screen === "won" || root.state.screen === "lost")
               width: parent.width
               label: root.state.mode === "challenge" ? "New Survival Run" : "Play Again (" + root.levelName(root.state.difficulty) + ")"
               chosen: true
@@ -866,7 +897,7 @@ Item {
             }
 
             MenuRow {
-              visible: root.state.screen !== "dealing"
+              visible: !root.dealing
               width: parent.width
               label: "Main Menu"
               chosen: false
@@ -879,7 +910,7 @@ Item {
             id: playColumn
             anchors.fill: parent
             spacing: Style.spacing.sm
-            visible: root.storageReady && root.state.screen === "play"
+            visible: root.storageReady && !root.dealing && root.state.screen === "play"
 
             // Telemetry Stat Chips
             Row {

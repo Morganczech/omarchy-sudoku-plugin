@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gruut.sudoku",
   "name": "Sudoku Challenge",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "Morganczech",
   "license": "MIT",
   "description": "Classic Sudoku and progressive Survival Challenge with full keyboard & mouse controls.",

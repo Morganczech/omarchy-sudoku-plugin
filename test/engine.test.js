@@ -133,6 +133,79 @@ test("save round-trips a game in progress", function () {
   assert.equal(resumed.screen, "play")
 })
 
+test("survival challenge round-clear and round 2 progression survive save/parse/resume", function () {
+  const config = Challenge.defaultConfig()
+  const round1Puzzle = Sudoku.generate("easy", 21)
+  let state = Game.begin(round1Puzzle, {
+    mode: "challenge",
+    difficulty: "easy",
+    round: 1,
+    lives: config.startLives,
+    hints: config.hintsPerPuzzle,
+    elapsedMs: 0,
+    score: 0
+  })
+
+  // Spend 1 life on a mistake, then solve round 1
+  const firstHole = state.selected
+  const wrongDigit = state.solution[firstHole] === 9 ? 1 : state.solution[firstHole] + 1
+  state = Game.place(state, wrongDigit)
+  assert.equal(state.lives, 2)
+  assert.equal(state.mistakes, 1)
+
+  state = Game.tick(state, 42000)
+  for (let i = 0; i < 81 && state.status === "playing"; i++) {
+    if (!state.given[i] && state.board[i] !== state.solution[i]) {
+      state = Game.select(state, i)
+      state = Game.place(state, state.solution[i])
+    }
+  }
+  assert.equal(state.status, "round")
+  assert.equal(state.screen, "round")
+  assert.equal(state.score, 1)
+  assert.equal(state.clearedElapsedMs, 42000)
+
+  // Save & restore while on the Round Clear screen before advancing
+  const roundClearLoaded = Storage.parse(JSON.stringify(Storage.serialize(state)))
+  assert.equal(roundClearLoaded.status, "round")
+  assert.equal(roundClearLoaded.screen, "round")
+  assert.equal(roundClearLoaded.round, 1)
+  assert.equal(roundClearLoaded.score, 1)
+  assert.equal(roundClearLoaded.lives, 2)
+  assert.equal(roundClearLoaded.mistakes, 1)
+  assert.equal(roundClearLoaded.clearedElapsedMs, 42000)
+
+  // Advance to Round 2 (Medium) and make one move
+  const round2Puzzle = Sudoku.generate(Challenge.nextDifficulty(roundClearLoaded.difficulty), 22)
+  let round2State = Game.begin(round2Puzzle, {
+    mode: "challenge",
+    difficulty: Challenge.nextDifficulty(roundClearLoaded.difficulty),
+    round: roundClearLoaded.round + 1,
+    lives: Challenge.livesAfterClear(roundClearLoaded.lives, config),
+    mistakes: roundClearLoaded.mistakes,
+    hints: config.hintsPerPuzzle,
+    elapsedMs: roundClearLoaded.elapsedMs,
+    clearedElapsedMs: roundClearLoaded.clearedElapsedMs,
+    score: roundClearLoaded.score
+  })
+  const r2Hole = round2State.selected
+  round2State = Game.place(round2State, round2State.solution[r2Hole])
+  round2State = Game.tick(round2State, 5000)
+
+  const round2Loaded = Storage.parse(JSON.stringify(Storage.serialize(round2State)))
+  assert.equal(round2Loaded.mode, "challenge")
+  assert.equal(round2Loaded.difficulty, "medium")
+  assert.equal(round2Loaded.round, 2)
+  assert.equal(round2Loaded.lives, 4)
+  assert.equal(round2Loaded.mistakes, 1)
+  assert.equal(round2Loaded.score, 1)
+  assert.equal(round2Loaded.elapsedMs, 47000)
+  assert.equal(round2Loaded.clearedElapsedMs, 42000)
+  assert.equal(round2Loaded.status, "playing")
+  assert.equal(round2Loaded.screen, "play")
+  assert.equal(round2Loaded.board[r2Hole], round2State.solution[r2Hole])
+})
+
 test("placing a valid digit clears matching peer notes and undo restores them", function () {
   const puzzle = Sudoku.generate("easy", 11)
   let state = Game.begin(puzzle, { mode: "classic", difficulty: "easy", hints: 3 })

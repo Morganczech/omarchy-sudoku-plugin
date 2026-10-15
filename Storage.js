@@ -73,8 +73,10 @@ function parse(raw) {
   if (!data || data.version !== 1 || !data.mode) return null
   if (!data.board || data.board.length !== 81 || !data.solution || data.solution.length !== 81) return null
   if (data.status === "lost") return null
+  var status = data.status || "playing"
+  var screen = status === "won" ? "won" : status === "round" ? "round" : "play"
   return {
-    screen: "menu",
+    screen: screen,
     mode: data.mode,
     difficulty: data.difficulty || "easy",
     round: data.round || 1,
@@ -90,7 +92,7 @@ function parse(raw) {
     solution: copyBoard(data.solution),
     notes: copyNotes(data.notes),
     selected: Math.max(0, Math.min(80, data.selected || 0)),
-    status: data.status || "playing",
+    status: status,
     score: data.score || 0,
     history: [],
     future: [],
